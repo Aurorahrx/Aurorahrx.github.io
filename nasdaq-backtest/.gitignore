@@ -1,0 +1,13 @@
+# 临时/本地文件
+_chrome-tmp/
+*.png
+_dom*.html
+_err.txt
+
+# Python
+__pycache__/
+*.pyc
+
+# 系统
+.DS_Store
+Thumbs.db

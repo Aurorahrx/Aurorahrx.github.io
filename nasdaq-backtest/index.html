@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>纳斯达克定投 vs 前10跟踪 · 策略回测</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header>
+  <h1>📈 纳斯达克定投 vs 前10跟踪</h1>
+  <p class="sub">纯前端静态回测 · 数据为 yfinance 复权收盘价 · 前10按季度再平衡（V2 动态历史成分名单）</p>
+</header>
+
+<main>
+  <!-- 参数面板 -->
+  <section class="panel" id="controls">
+    <label>每月定投金额 $
+      <input type="number" id="amount" value="1000" min="1" step="100">
+    </label>
+    <label>频率
+      <select id="freq">
+        <option value="monthly">每月</option>
+        <option value="weekly">每周</option>
+      </select>
+    </label>
+    <label>起始日期
+      <input type="date" id="start" value="2006-01-01">
+    </label>
+    <button id="run">运行回测</button>
+    <span id="status" class="status">就绪</span>
+  </section>
+
+  <!-- 图表 -->
+  <section class="panel chart-panel">
+    <canvas id="chart"></canvas>
+  </section>
+
+  <!-- 播放控制 -->
+  <section class="panel playbar">
+    <button id="play">▶ 播放动画</button>
+    <label>速度
+      <select id="speed">
+        <option value="1">1x</option>
+        <option value="2">2x</option>
+        <option value="4">4x</option>
+        <option value="8">8x</option>
+      </select>
+    </label>
+    <input type="range" id="progress" min="0" max="1000" value="1000">
+    <span id="year-label" class="status"></span>
+  </section>
+
+  <!-- 指标 -->
+  <section class="metrics">
+    <div class="card">
+      <h2>策略 A：定投 QQQ</h2>
+      <div id="dca-metrics"></div>
+    </div>
+    <div class="card">
+      <h2>策略 B：前10跟踪</h2>
+      <div id="top10-metrics"></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  数据：Yahoo Finance（yfinance）· 历史成分：unliftedq/index-constitution（2006至今）· 仅供研究，不构成投资建议
+</footer>
+
+<script src="js/config.js"></script>
+<script src="js/data.js"></script>
+<script src="js/backtest.js"></script>
+<script src="js/chart.js"></script>
+<script src="js/ui.js"></script>
+</body>
+</html>
