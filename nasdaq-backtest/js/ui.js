@@ -15,6 +15,7 @@ window.App = (function () {
   let playing = false;
   let viewMode = "compare";      // compare | money
   let strategy = "dca";          // dca | top10
+  let top10Mode = "dca";         // dca | lump
   let initialCapital = 10000;
 
   const els = {};
@@ -29,6 +30,7 @@ window.App = (function () {
     els.status = document.getElementById("status");
     els.view = document.getElementById("view");
     els.strategy = document.getElementById("strategy");
+    els.top10Mode = document.getElementById("top10-mode");
     els.ovValue = document.getElementById("ov-value");
     els.ovPnl = document.getElementById("ov-pnl");
     els.ovLabel = document.getElementById("ov-label");
@@ -38,6 +40,7 @@ window.App = (function () {
     els.progress.addEventListener("input", onSeek);
     els.view.addEventListener("change", () => { viewMode = els.view.value; redraw(); });
     els.strategy.addEventListener("change", () => { strategy = els.strategy.value; redraw(); });
+    els.top10Mode.addEventListener("change", () => { top10Mode = els.top10Mode.value; run(); });
 
     await run();
   }
@@ -45,12 +48,13 @@ window.App = (function () {
   async function run() {
     els.status.textContent = "计算中…";
 
-    const dcaOpts = {
-      amount: Number(document.getElementById("amount").value) || 1000,
-      freq: document.getElementById("freq").value || "monthly",
-      start: document.getElementById("start").value || "2006-01-01",
-    };
-    const top10Opts = { weight: "equal", start: dcaOpts.start, initial: initialCapital };
+    const amount = Number(document.getElementById("amount").value) || 1000;
+    const freq = document.getElementById("freq").value || "monthly";
+    const start = document.getElementById("start").value || "2006-01-01";
+    const dcaOpts = { amount, freq, start };
+    const top10Opts = top10Mode === "dca"
+      ? { weight: "equal", start, amount, freq }
+      : { weight: "equal", start, initial: initialCapital };
 
     try {
       stopAnim();
@@ -60,7 +64,7 @@ window.App = (function () {
       let schedule = await Data.loadSchedule();
       let mode = "V2 动态前10";
       if (!schedule || schedule.length === 0) {
-        schedule = [{ date: dcaOpts.start, symbols: CONFIG.top10Fixed.slice() }];
+        schedule = [{ date: start, symbols: CONFIG.top10Fixed.slice() }];
         mode = "V1 固定前10";
       }
       const union = new Set();
@@ -79,7 +83,7 @@ window.App = (function () {
       els.progress.value = 1000;
       els.year.textContent = axis[axis.length - 1].slice(0, 4);
       els.status.textContent =
-        `完成 · ${dcaOpts.start} ~ ${axis[axis.length - 1]} · ${mode}`;
+        `完成 · ${start} ~ ${axis[axis.length - 1]} · ${mode} · 前10投入=${top10Mode === "dca" ? "每月定投" : "一次性"}`;
     } catch (e) {
       els.status.textContent = "出错：" + e.message;
       console.error(e);
@@ -95,19 +99,20 @@ window.App = (function () {
       return axis.map((d) => (m.has(d) ? m.get(d) : null));
     };
     const dcaNorm = dcaRes.equity.map((v, i) => (dcaRes.invested[i] > 0 ? v / dcaRes.invested[i] : 1));
-    const base = top10Res.equity[0] || 1;
-    const top10Norm = top10Res.equity.map((v) => v / base);
+    let top10Norm;
+    if (top10Res.mode === "dca") {
+      top10Norm = top10Res.equity.map((v, i) => (top10Res.invested[i] > 0 ? v / top10Res.invested[i] : 1));
+    } else {
+      const base = top10Res.equity[0] || 1;
+      top10Norm = top10Res.equity.map((v) => v / base);
+    }
     compareSeries = [
       { name: "定投 QQQ（策略A）", values: dcaNorm, color: CONFIG.theme.accent1 },
       { name: "前10跟踪（策略B）", values: align(top10Norm, top10Res.dates), color: CONFIG.theme.accent2 },
     ];
 
     money.dca = { dates: dcaRes.dates, value: dcaRes.equity, cost: dcaRes.invested };
-    money.top10 = {
-      dates: top10Res.dates,
-      value: top10Res.equity,
-      cost: top10Res.equity.map(() => initialCapital),
-    };
+    money.top10 = { dates: top10Res.dates, value: top10Res.equity, cost: top10Res.invested };
   }
 
   function curProgress() {
@@ -150,7 +155,7 @@ window.App = (function () {
     const value = m.value[idx];
     const cost = m.cost[idx];
     const pnl = value - cost;
-    const label = strategy === "dca" ? "定投 QQQ" : "前10跟踪";
+    const label = strategy === "dca" ? "定投 QQQ" : (top10Mode === "dca" ? "前10跟踪（定投）" : "前10跟踪（一次性）");
     els.ovLabel.textContent = label;
     els.ovValue.textContent = fmtMoney(value);
     els.ovPnl.textContent = fmtMoney2(pnl);
@@ -200,23 +205,27 @@ window.App = (function () {
   }
 
   function fillMetrics(id, m, isDca) {
-    const rows = isDca
-      ? [
-          ["累计投入", fmtMoney(m.invested)],
-          ["期末市值", fmtMoney(m.finalValue)],
-          ["总收益", fmtMoney(m.profit)],
-          ["总收益率", fmtPct(m.totalReturn)],
-          ["年化收益(XIRR)", m.annualized == null ? "—" : fmtPct(m.annualized)],
-          ["最大回撤", fmtPct(m.maxDrawdown)],
-        ]
-      : [
-          ["初始资金", fmtMoney(m.initial)],
-          ["期末市值", fmtMoney(m.finalValue)],
-          ["总收益率", fmtPct(m.totalReturn)],
-          ["年化收益", fmtPct(m.annualized)],
-          ["最大回撤", fmtPct(m.maxDrawdown)],
-          ["夏普比率", m.sharpe],
-        ];
+    let rows;
+    if (isDca || m.invested != null) {
+      rows = [
+        ["累计投入", fmtMoney(m.invested)],
+        ["期末市值", fmtMoney(m.finalValue)],
+        ["总收益", fmtMoney(m.profit)],
+        ["总收益率", fmtPct(m.totalReturn)],
+        ["年化收益(XIRR)", m.annualized == null ? "—" : fmtPct(m.annualized)],
+        ["最大回撤", fmtPct(m.maxDrawdown)],
+        ["夏普比率", m.sharpe],
+      ];
+    } else {
+      rows = [
+        ["初始资金", fmtMoney(m.initial)],
+        ["期末市值", fmtMoney(m.finalValue)],
+        ["总收益率", fmtPct(m.totalReturn)],
+        ["年化收益", fmtPct(m.annualized)],
+        ["最大回撤", fmtPct(m.maxDrawdown)],
+        ["夏普比率", m.sharpe],
+      ];
+    }
     document.getElementById(id).innerHTML =
       rows.map((r) => `<div class="mrow"><span>${r[0]}</span><b>${r[1]}</b></div>`).join("");
   }

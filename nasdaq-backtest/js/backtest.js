@@ -151,11 +151,14 @@
    * 策略 B：前10跟踪（季度再平衡，默认等权）
    * @param seriesMap { symbol: series }
    * @param schedule  V2: [{date, symbols:[...]}] 升序；V1: 传 [{date:'<start>', symbols:[...]}] 单个即可
-   * @param opts { start, weight('equal'|'marketcap'), marketcap:{symbol:{shares}} }
+   * @param opts { start, weight('equal'|'marketcap'), marketcap:{symbol:{shares}},
+   *               amount(每月定投金额,>0启用定投), freq('monthly'|'weekly'), initial(一次性本金) }
    */
   function backtestTop10(seriesMap, schedule, opts) {
     const start = opts.start || "2006-01-01";
     const weight = opts.weight || "equal";
+    const dcaAmount = opts.amount || 0;
+    const freq = opts.freq || "monthly";
 
     // 1) 收集参与 symbol 并构建对齐矩阵
     const syms = new Set();
@@ -200,15 +203,33 @@
     // 4) 模拟
     const startIdx = dates.findIndex((d) => d >= start);
     if (startIdx < 0) return null;
-    const startT = parseDate(start).getTime();
 
-    let capital = opts.initial || 10000;
+    const isDCA = dcaAmount > 0;
+    const initial = opts.initial || 10000;
+    let capital = isDCA ? 0 : initial;
     let holdings = null; // {sym: shares}
-    const equity = [], eqDates = [];
+    const equity = [], eqDates = [], investedArr = [], contributions = [];
+    let invested = 0;
+
+    const invIdx = isDCA ? new Set(investmentIndices({ dates }, { freq, start })) : new Set();
 
     for (let i = startIdx; i < dates.length; i++) {
       const d = dates[i];
-      // 检查是否处于某周期开始日
+
+      // a) 定投追加：买入当前持仓（无持仓时用首个季度名单）
+      if (invIdx.has(i)) {
+        capital += dcaAmount;
+        invested += dcaAmount;
+        contributions.push({ date: d, amount: dcaAmount });
+        const list = holdings ? Object.keys(holdings) : (periods[0] ? periods[0].symbols : []);
+        const valid = list.filter((s) => price[s] && price[s][i] != null);
+        if (valid.length) {
+          if (!holdings) holdings = {};
+          for (const s of valid) holdings[s] = (holdings[s] || 0) + (dcaAmount / valid.length) / price[s][i];
+        }
+      }
+
+      // b) 季度调仓：等权再平衡（用当前总市值重配）
       const period = periods.find((p) => p.start === d);
       if (period) {
         const w = weightsFor(period, i);
@@ -217,7 +238,8 @@
           for (const s in w) holdings[s] = capital * w[s] / price[s][i];
         }
       }
-      // 每日市值
+
+      // c) 每日市值
       if (holdings) {
         let val = 0;
         for (const s in holdings) {
@@ -228,16 +250,38 @@
       }
       equity.push(capital);
       eqDates.push(d);
-      // 期初未建仓前，保持初始资金不变
+      investedArr.push(isDCA ? invested : initial);
+    }
+
+    // 5) 指标
+    const finalValue = capital;
+    if (isDCA) {
+      const profit = finalValue - invested;
+      const totalReturn = invested > 0 ? profit / invested : 0;
+      const cf = contributions.map((c) => ({ amount: -c.amount, date: c.date }));
+      cf.push({ amount: finalValue, date: eqDates[eqDates.length - 1] });
+      const annualized = xirr(cf);
+      return {
+        mode: "dca",
+        dates: eqDates, equity, invested: investedArr, contributions,
+        metrics: {
+          invested: round(invested, 2),
+          finalValue: round(finalValue, 2),
+          profit: round(profit, 2),
+          totalReturn: round(totalReturn, 4),
+          annualized: annualized === null ? null : round(annualized, 4),
+          maxDrawdown: round(maxDrawdown(equity), 4),
+          sharpe: round(sharpe(equity), 3),
+        },
+      };
     }
 
     const years = (parseDate(eqDates[eqDates.length - 1]).getTime() - parseDate(eqDates[0]).getTime()) / (365 * DAY_MS);
-    const initial = opts.initial || 10000;
     const totalReturn = initial > 0 ? (capital / initial - 1) : 0;
     const annualized = years > 0 ? Math.pow(capital / initial, 1 / years) - 1 : 0;
-
     return {
-      dates: eqDates, equity,
+      mode: "lump",
+      dates: eqDates, equity, invested: investedArr,
       metrics: {
         initial: round(initial, 2),
         finalValue: round(capital, 2),
