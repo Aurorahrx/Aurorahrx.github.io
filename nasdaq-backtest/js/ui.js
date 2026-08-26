@@ -1,16 +1,21 @@
-/** UI 逻辑：装配数据、运行回测、渲染图表（含播放动画）与指标 */
+/** UI 逻辑：装配数据、运行回测、渲染图表（含播放动画、资金曲线、盈亏显示） */
 window.App = (function () {
   "use strict";
 
   const fmtMoney = (v) => "$" + Math.round(v).toLocaleString("en-US");
+  const fmtMoney2 = (v) => (v < 0 ? "-$" : "$") + Math.abs(Math.round(v)).toLocaleString("en-US");
   const fmtPct = (v) => (v * 100).toFixed(1) + "%";
 
   let dcaRes = null;
   let top10Res = null;
   let axis = [];
-  let seriesCache = null; // 供动画复用的归一化曲线
+  let compareSeries = null;      // 归一化对比曲线
+  let money = { dca: null, top10: null }; // 资金曲线 {dates, value, cost}
   let animId = null;
   let playing = false;
+  let viewMode = "compare";      // compare | money
+  let strategy = "dca";          // dca | top10
+  let initialCapital = 10000;
 
   const els = {};
 
@@ -22,10 +27,17 @@ window.App = (function () {
     els.year = document.getElementById("year-label");
     els.chart = document.getElementById("chart");
     els.status = document.getElementById("status");
+    els.view = document.getElementById("view");
+    els.strategy = document.getElementById("strategy");
+    els.ovValue = document.getElementById("ov-value");
+    els.ovPnl = document.getElementById("ov-pnl");
+    els.ovLabel = document.getElementById("ov-label");
 
     els.run.addEventListener("click", run);
     els.play.addEventListener("click", togglePlay);
     els.progress.addEventListener("input", onSeek);
+    els.view.addEventListener("change", () => { viewMode = els.view.value; redraw(); });
+    els.strategy.addEventListener("change", () => { strategy = els.strategy.value; redraw(); });
 
     await run();
   }
@@ -38,7 +50,7 @@ window.App = (function () {
       freq: document.getElementById("freq").value || "monthly",
       start: document.getElementById("start").value || "2006-01-01",
     };
-    const top10Opts = { weight: "equal", start: dcaOpts.start, initial: 10000 };
+    const top10Opts = { weight: "equal", start: dcaOpts.start, initial: initialCapital };
 
     try {
       stopAnim();
@@ -60,21 +72,21 @@ window.App = (function () {
       top10Res = Backtest.backtestTop10(seriesMap, schedule, top10Opts);
 
       buildSeries();
-      drawChartAt(1);
+      redraw();
       fillMetrics("dca-metrics", dcaRes.metrics, true);
       fillMetrics("top10-metrics", top10Res.metrics, false);
 
       els.progress.value = 1000;
       els.year.textContent = axis[axis.length - 1].slice(0, 4);
       els.status.textContent =
-        `完成 · ${dcaOpts.start} ~ ${axis[axis.length - 1]} · ${mode} · 归一化净值（每$1增长倍数）`;
+        `完成 · ${dcaOpts.start} ~ ${axis[axis.length - 1]} · ${mode}`;
     } catch (e) {
       els.status.textContent = "出错：" + e.message;
       console.error(e);
     }
   }
 
-  /** 对齐并归一化两条曲线，缓存供动画复用 */
+  /** 构建归一化对比曲线 + 各策略资金曲线 */
   function buildSeries() {
     axis = dcaRes.dates;
     const align = (values, fromDates) => {
@@ -85,29 +97,73 @@ window.App = (function () {
     const dcaNorm = dcaRes.equity.map((v, i) => (dcaRes.invested[i] > 0 ? v / dcaRes.invested[i] : 1));
     const base = top10Res.equity[0] || 1;
     const top10Norm = top10Res.equity.map((v) => v / base);
-    seriesCache = [
+    compareSeries = [
       { name: "定投 QQQ（策略A）", values: dcaNorm, color: CONFIG.theme.accent1 },
       { name: "前10跟踪（策略B）", values: align(top10Norm, top10Res.dates), color: CONFIG.theme.accent2 },
     ];
+
+    money.dca = { dates: dcaRes.dates, value: dcaRes.equity, cost: dcaRes.invested };
+    money.top10 = {
+      dates: top10Res.dates,
+      value: top10Res.equity,
+      cost: top10Res.equity.map(() => initialCapital),
+    };
+  }
+
+  function curProgress() {
+    return Number(els.progress.value) / 1000;
+  }
+
+  function redraw() {
+    const p = curProgress();
+    drawChartAt(p);
+    updateOverlay(p);
   }
 
   function drawChartAt(progress) {
-    Chart.draw(els.chart, {
-      dates: axis,
-      series: seriesCache,
-      yFormat: (v) => v.toFixed(1) + "x",
-      progress,
-    });
+    if (viewMode === "money") {
+      const m = money[strategy];
+      const color = strategy === "dca" ? CONFIG.theme.accent1 : CONFIG.theme.accent2;
+      Chart.draw(els.chart, {
+        dates: m.dates,
+        series: [
+          { name: "总持仓", values: m.value, color },
+          { name: "本金", values: m.cost, color: CONFIG.theme.muted, dash: [6, 4], fill: false, width: 1.5 },
+        ],
+        yFormat: fmtMoney,
+        progress,
+      });
+    } else {
+      Chart.draw(els.chart, {
+        dates: axis,
+        series: compareSeries,
+        yFormat: (v) => v.toFixed(1) + "x",
+        progress,
+      });
+    }
+  }
+
+  function updateOverlay(progress) {
+    const m = money[strategy];
+    if (!m) return;
+    const idx = Math.max(0, Math.min(m.dates.length - 1, Math.floor(progress * m.dates.length)));
+    const value = m.value[idx];
+    const cost = m.cost[idx];
+    const pnl = value - cost;
+    const label = strategy === "dca" ? "定投 QQQ" : "前10跟踪";
+    els.ovLabel.textContent = label;
+    els.ovValue.textContent = fmtMoney(value);
+    els.ovPnl.textContent = fmtMoney2(pnl);
+    els.ovPnl.style.color = pnl >= 0 ? CONFIG.theme.up : CONFIG.theme.down;
   }
 
   function togglePlay() {
     if (playing) { stopAnim(); return; }
-    // 满进度时重播 → 从 0 开始
     if (Number(els.progress.value) >= 1000) els.progress.value = 0;
     playing = true;
     els.play.textContent = "⏸ 暂停";
     const speed = Number(els.speed.value) || 1;
-    const dur = 9000 / speed; // 1x 时约 9 秒播完
+    const dur = 9000 / speed;
     const t0 = performance.now() - (Number(els.progress.value) / 1000) * dur;
     const step = (now) => {
       if (!playing) return;
@@ -115,9 +171,11 @@ window.App = (function () {
       if (!isFinite(p)) p = 0;
       p = Math.max(0, Math.min(1, p));
       els.progress.value = Math.round(p * 1000);
-      const idx = Math.max(0, Math.min(axis.length - 1, Math.floor(p * axis.length)));
-      if (axis[idx]) els.year.textContent = axis[idx].slice(0, 4);
+      const d = viewMode === "money" ? money[strategy].dates : axis;
+      const idx = Math.max(0, Math.min(d.length - 1, Math.floor(p * d.length)));
+      if (d[idx]) els.year.textContent = d[idx].slice(0, 4);
       drawChartAt(p);
+      updateOverlay(p);
       if (p < 1) animId = requestAnimationFrame(step);
       else stopAnim(true);
     };
@@ -129,14 +187,16 @@ window.App = (function () {
     if (animId) cancelAnimationFrame(animId);
     animId = null;
     els.play.textContent = "▶ 播放动画";
-    if (finished) { els.progress.value = 1000; drawChartAt(1); }
+    if (finished) { els.progress.value = 1000; drawChartAt(1); updateOverlay(1); }
   }
 
   function onSeek() {
-    const p = Math.max(0, Math.min(1, Number(els.progress.value) / 1000));
-    const idx = Math.max(0, Math.min(axis.length - 1, Math.floor(p * axis.length)));
-    if (axis[idx]) els.year.textContent = axis[idx].slice(0, 4);
+    const p = curProgress();
+    const d = viewMode === "money" ? money[strategy].dates : axis;
+    const idx = Math.max(0, Math.min(d.length - 1, Math.floor(p * d.length)));
+    if (d[idx]) els.year.textContent = d[idx].slice(0, 4);
     drawChartAt(p);
+    updateOverlay(p);
   }
 
   function fillMetrics(id, m, isDca) {

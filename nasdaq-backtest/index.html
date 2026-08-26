@@ -9,7 +9,7 @@
 <body>
 <header>
   <h1>📈 纳斯达克定投 vs 前10跟踪</h1>
-  <p class="sub">纯前端静态回测 · 数据为 yfinance 复权收盘价 · 前10按季度再平衡（V2 动态历史成分名单）</p>
+  <p class="sub">纯前端静态回测 · 数据为 yfinance 复权收盘价 · 前10按季度再平衡（V2 动态历史成分名单）· <a href="constituents.html" class="nav">查看动态前10成分（每月）→</a></p>
 </header>
 
 <main>
@@ -33,11 +33,28 @@
 
   <!-- 图表 -->
   <section class="panel chart-panel">
+    <div id="overlay" class="overlay">
+      <div class="ov-label" id="ov-label">定投 QQQ</div>
+      <div class="ov-row">总持仓 <b id="ov-value">$—</b></div>
+      <div class="ov-row">浮盈浮亏 <b id="ov-pnl">$—</b></div>
+    </div>
     <canvas id="chart"></canvas>
   </section>
 
   <!-- 播放控制 -->
   <section class="panel playbar">
+    <label>视图
+      <select id="view">
+        <option value="compare">📈 策略对比</option>
+        <option value="money">💰 资金曲线</option>
+      </select>
+    </label>
+    <label>标的
+      <select id="strategy">
+        <option value="dca">定投 QQQ</option>
+        <option value="top10">前10跟踪</option>
+      </select>
+    </label>
     <button id="play">▶ 播放动画</button>
     <label>速度
       <select id="speed">

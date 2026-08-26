@@ -81,7 +81,7 @@ window.Chart = (function () {
       if (pts.length < 2) continue;
 
       // 渐变填充
-      if (opts.fill !== false) {
+      if (s.fill !== false) {
         const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t + h);
         grad.addColorStop(0, hexA(s.color, 0.28));
         grad.addColorStop(1, hexA(s.color, 0.02));
@@ -99,10 +99,12 @@ window.Chart = (function () {
       ctx.beginPath();
       smoothPath(ctx, pts);
       ctx.strokeStyle = s.color;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = s.width || 2;
       ctx.lineJoin = "round";
       ctx.lineCap = "round";
+      if (s.dash) ctx.setLineDash(s.dash);
       ctx.stroke();
+      ctx.setLineDash([]);
 
       // 流动光效：头部亮点 + 沿曲线拖尾的彗星光
       const last = pts[pts.length - 1];

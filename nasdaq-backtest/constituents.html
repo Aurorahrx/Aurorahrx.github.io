@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>动态前10成分追踪（每月）· 纳斯达克</title>
+<link rel="stylesheet" href="css/style.css">
+<style>
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  th, td { padding: 8px 10px; text-align: left; font-size: 13px; border-bottom: 1px solid var(--border); }
+  th { color: var(--dim); font-weight: 600; }
+  td.rank { color: var(--gold); font-weight: 700; width: 48px; }
+  td.sym { font-weight: 700; color: var(--accent1); }
+  td.mcap, td.wt { text-align: right; font-variant-numeric: tabular-nums; }
+  .tag-new { color: var(--up); font-size: 11px; margin-left: 4px; }
+  .tag-out { color: var(--down); }
+  #change-info { font-size: 12px; color: var(--dim); min-height: 20px; margin-top: 4px; }
+  .month-big { font-size: 18px; font-weight: 700; color: var(--gold); margin: 0 8px; }
+  .controls { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .controls input[type=range] { flex: 1; min-width: 180px; accent-color: var(--accent1); }
+  .controls button { background: var(--accent1); color: #fff; border: none; border-radius: 8px; padding: 7px 14px; cursor: pointer; font-weight: 700; }
+  .note { font-size: 12px; color: var(--dim); margin-top: 6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>📊 纳斯达克前10 动态追踪（每月）</h1>
+  <p class="sub">按月末市值排名 · 从历史成分名单动态选取 · <a href="index.html" class="nav">← 返回回测</a></p>
+</header>
+
+<main>
+  <section class="panel controls">
+    <button id="prev">◀ 上月</button>
+    <input type="range" id="month-range" min="0" max="0" value="0">
+    <button id="next">下月 ▶</button>
+    <span class="month-big" id="month-label"></span>
+    <button id="play">▶ 播放</button>
+    <span id="rank-note" class="note"></span>
+  </section>
+
+  <section class="panel">
+    <div id="change-info"></div>
+    <table id="table">
+      <thead>
+        <tr><th>排名</th><th>代码</th><th>名称</th><th>市值($B)</th><th>权重</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <div class="note">口径：市值 = 月末价 × 最新股本（近似）；成分资格按月末时点判断；早期已退市标的可能因数据缺失被跳过，仅供研究。</div>
+  </section>
+</main>
+
+<script src="js/constituents.js"></script>
+</body>
+</html>

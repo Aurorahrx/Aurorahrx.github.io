@@ -29,6 +29,9 @@ window.CONFIG = {
     dim: "#8b949e",
     accent1: "#58a6ff", // 定投曲线
     accent2: "#3fb950", // 前10曲线
+    muted: "#8b949e",   // 本金/成本线
+    up: "#3fb950",      // 浮盈
+    down: "#f85149",    // 浮亏
     glow: "rgba(88,166,255,0.6)",
   },
 };
