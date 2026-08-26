@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>动态前10成分追踪（每月）· 纳斯达克</title>
+<title>动态前10成分追踪 · 纳斯达克</title>
 <link rel="stylesheet" href="css/style.css">
 <style>
   table { width: 100%; border-collapse: collapse; margin-top: 10px; }
@@ -20,25 +20,47 @@
   .controls input[type=range] { flex: 1; min-width: 180px; accent-color: var(--accent1); }
   .controls button { background: var(--accent1); color: #fff; border: none; border-radius: 8px; padding: 7px 14px; cursor: pointer; font-weight: 700; }
   .note { font-size: 12px; color: var(--dim); margin-top: 6px; }
+  .vt { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; margin-right: 18px; cursor: pointer; }
+  .vt input { accent-color: var(--accent1); }
+  /* 调仓明细 */
+  .rb-head { font-size: 15px; color: var(--gold); font-weight: 700; margin-bottom: 12px; }
+  .rb-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .rb-card { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: #0d1117; }
+  .rb-card.buy { border-top: 3px solid var(--up); }
+  .rb-card.sell { border-top: 3px solid var(--down); }
+  .rb-card.hold { border-top: 3px solid var(--dim); }
+  .rb-card h3 { font-size: 13px; margin-bottom: 8px; color: var(--text); }
+  .rb-list { font-size: 13px; line-height: 1.9; min-height: 24px; }
+  .rb-item { display: inline-block; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 2px 9px; margin: 2px; }
+  .rb-item b { color: var(--accent1); }
+  .rb-item small { color: var(--dim); margin-left: 4px; }
+  .rb-none { color: var(--dim); font-style: italic; }
+  @media (max-width: 720px) { .rb-grid { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
 <header>
-  <h1>📊 纳斯达克前10 动态追踪（每月）</h1>
+  <h1>📊 纳斯达克前10 动态追踪</h1>
   <p class="sub">按月末市值排名 · 从历史成分名单动态选取 · <a href="index.html" class="nav">← 返回回测</a></p>
 </header>
 
 <main>
   <section class="panel controls">
-    <button id="prev">◀ 上月</button>
-    <input type="range" id="month-range" min="0" max="0" value="0">
-    <button id="next">下月 ▶</button>
-    <span class="month-big" id="month-label"></span>
+    <button id="prev">◀</button>
+    <input type="range" id="range" min="0" max="0" value="0">
+    <button id="next">▶</button>
+    <span class="month-big" id="label"></span>
     <button id="play">▶ 播放</button>
     <span id="rank-note" class="note"></span>
   </section>
 
   <section class="panel">
+    <label class="vt"><input type="radio" name="view" value="monthly" checked> 📈 月度排名</label>
+    <label class="vt"><input type="radio" name="view" value="rebalance"> 🔀 调仓明细（季度）</label>
+  </section>
+
+  <!-- 月度排名视图 -->
+  <section class="panel" id="monthly-view">
     <div id="change-info"></div>
     <table id="table">
       <thead>
@@ -47,6 +69,17 @@
       <tbody></tbody>
     </table>
     <div class="note">口径：市值 = 月末价 × 最新股本（近似）；成分资格按月末时点判断；早期已退市标的可能因数据缺失被跳过，仅供研究。</div>
+  </section>
+
+  <!-- 调仓明细视图 -->
+  <section class="panel" id="rebalance-view" style="display:none">
+    <div class="rb-head" id="rb-head"></div>
+    <div class="rb-grid">
+      <div class="rb-card buy"><h3>🟢 买入（新进前10）</h3><div id="rb-buy" class="rb-list"></div></div>
+      <div class="rb-card sell"><h3>🔴 卖出（跌出前10）</h3><div id="rb-sell" class="rb-list"></div></div>
+      <div class="rb-card hold"><h3>⚪ 持有（调仓回10%）</h3><div id="rb-hold" class="rb-list"></div></div>
+    </div>
+    <div class="note">等权再平衡：每个季度末卖出「跌出者」、买入「新进者」，仍在榜上的持有者调回各 10% 权重。名单无变化的季度也会做等权再平衡。</div>
   </section>
 </main>
 

@@ -1,5 +1,6 @@
-/** 动态前10成分追踪（每月）：
- *  读取 universe-marketcap.json + ndx100-history.csv，按月末市值排名动态选前10。
+/** 动态前10成分追踪：
+ *  视图1「月度排名」：universe-marketcap.json + ndx100-history.csv，按月市值排名。
+ *  视图2「调仓明细」：top10-schedule.json，按季度显示买入/卖出/持有。
  */
 (function () {
   "use strict";
@@ -30,31 +31,34 @@
 
   function monthEnd(monthStr) {
     const [y, m] = monthStr.split("-").map(Number);
-    return new Date(Date.UTC(y, m, 0)); // m 为 1-12，Date.UTC 月份 0 基 → 上个月最后一天=本月底
+    return new Date(Date.UTC(y, m, 0));
   }
 
   let months = [];
   let top10ByMonth = {};
-  let members = [];
+  let quarters = [];
+  let rebalance = []; // {date, entered[], exited[], kept[]}
+  let nameMap = {};
+  let view = "monthly";
   let playTimer = null;
 
   async function init() {
-    const [uResp, cResp] = await Promise.all([
+    const [uResp, cResp, sResp] = await Promise.all([
       fetch("data/universe-marketcap.json"),
       fetch("data/ndx100-history.csv"),
+      fetch("data/top10-schedule.json"),
     ]);
     const universe = await uResp.json();
     const csvText = await cResp.text();
-    members = parseCsv(csvText);
+    const members = parseCsv(csvText);
+    nameMap = {};
+    members.forEach((x) => { nameMap[x.symbol] = x.name; });
+    const schedule = await sResp.json();
 
-    // 收集所有月份并排序
+    // 月度排名数据
     const monthSet = new Set();
-    for (const sym in universe) {
-      for (const m in universe[sym].monthly) monthSet.add(m);
-    }
+    for (const sym in universe) for (const m in universe[sym].monthly) monthSet.add(m);
     months = Array.from(monthSet).sort();
-
-    // 预计算每月前10
     top10ByMonth = {};
     for (const m of months) {
       const end = monthEnd(m);
@@ -71,25 +75,54 @@
       top10ByMonth[m] = caps.slice(0, 10);
     }
 
+    // 调仓明细数据（季度，与回测一致）
+    quarters = schedule.map((e) => e.date);
+    rebalance = [];
+    let prevSet = null;
+    for (const e of schedule) {
+      const cur = e.symbols;
+      const curSet = new Set(cur);
+      let entered, exited, kept;
+      if (prevSet === null) {
+        entered = cur.slice(); exited = []; kept = [];
+      } else {
+        entered = cur.filter((s) => !prevSet.has(s));
+        exited = Array.from(prevSet).filter((s) => !curSet.has(s));
+        kept = cur.filter((s) => prevSet.has(s));
+      }
+      rebalance.push({ date: e.date, entered, exited, kept });
+      prevSet = curSet;
+    }
+
     // UI
-    const slider = document.getElementById("month-range");
-    slider.max = months.length - 1;
-    slider.value = months.length - 1; // 默认最新月
+    const slider = document.getElementById("range");
+    const setRange = () => {
+      slider.max = dataLen() - 1;
+      slider.value = dataLen() - 1;
+    };
     slider.addEventListener("input", () => { stopPlay(); render(Number(slider.value)); });
     document.getElementById("prev").addEventListener("click", () => { stopPlay(); slider.value = Math.max(0, Number(slider.value) - 1); render(Number(slider.value)); });
-    document.getElementById("next").addEventListener("click", () => { stopPlay(); slider.value = Math.min(months.length - 1, Number(slider.value) + 1); render(Number(slider.value)); });
+    document.getElementById("next").addEventListener("click", () => { stopPlay(); slider.value = Math.min(dataLen() - 1, Number(slider.value) + 1); render(Number(slider.value)); });
     document.getElementById("play").addEventListener("click", togglePlay);
+    document.querySelectorAll('input[name="view"]').forEach((r) => {
+      r.addEventListener("change", () => { view = r.value; stopPlay(); setRange(); render(Number(slider.value)); });
+    });
 
-    render(months.length - 1);
+    setRange();
+    render(dataLen() - 1);
+  }
+
+  function dataLen() {
+    return view === "rebalance" ? quarters.length : months.length;
   }
 
   function togglePlay() {
     const btn = document.getElementById("play");
     if (playTimer) { stopPlay(); return; }
     btn.textContent = "⏸ 暂停";
-    const slider = document.getElementById("month-range");
+    const slider = document.getElementById("range");
     playTimer = setInterval(() => {
-      if (Number(slider.value) >= months.length - 1) { stopPlay(); return; }
+      if (Number(slider.value) >= dataLen() - 1) { stopPlay(); return; }
       slider.value = Number(slider.value) + 1;
       render(Number(slider.value));
     }, 600);
@@ -101,12 +134,33 @@
   }
 
   function render(idx) {
+    document.getElementById("monthly-view").style.display = view === "monthly" ? "" : "none";
+    document.getElementById("rebalance-view").style.display = view === "rebalance" ? "" : "none";
+    document.getElementById("rank-note").textContent = `${idx + 1} / ${dataLen()} ${view === "rebalance" ? "季度" : "月"}`;
+    if (view === "rebalance") renderRebalance(idx);
+    else renderMonthly(idx);
+  }
+
+  function chip(sym) {
+    return `<span class="rb-item"><b>${sym}</b><small>${nameMap[sym] || ""}</small></span>`;
+  }
+
+  function renderRebalance(idx) {
+    const rb = rebalance[idx];
+    document.getElementById("label").textContent = rb.date;
+    const noChange = rb.entered.length === 0 && rb.exited.length === 0;
+    document.getElementById("rb-head").textContent =
+      `${rb.date} 调仓明细` + (noChange ? "（名单无变化，仅等权再平衡）" : `（买入 ${rb.entered.length} 只 / 卖出 ${rb.exited.length} 只）`);
+    document.getElementById("rb-buy").innerHTML = rb.entered.length ? rb.entered.map(chip).join("") : '<span class="rb-none">无</span>';
+    document.getElementById("rb-sell").innerHTML = rb.exited.length ? rb.exited.map(chip).join("") : '<span class="rb-none">无</span>';
+    document.getElementById("rb-hold").innerHTML = rb.kept.length ? rb.kept.map(chip).join("") : '<span class="rb-none">无</span>';
+  }
+
+  function renderMonthly(idx) {
     const m = months[idx];
     const list = top10ByMonth[m] || [];
-    document.getElementById("month-label").textContent = m;
-    document.getElementById("rank-note").textContent = `${idx + 1} / ${months.length} 月`;
+    document.getElementById("label").textContent = m;
 
-    // 变化信息（对比上月）
     const prevList = idx > 0 ? top10ByMonth[months[idx - 1]] || [] : [];
     const prevSyms = new Set(prevList.map((x) => x.symbol));
     const curSyms = new Set(list.map((x) => x.symbol));
@@ -117,13 +171,11 @@
     if (exited.length) info.push(`⬇ 退出：${exited.map((x) => x.symbol).join("、")}`);
     document.getElementById("change-info").textContent = info.join("　") || "本月与上月前10名单一致";
 
-    // 排名变化箭头
     const prevRank = {};
     prevList.forEach((x, i) => { prevRank[x.symbol] = i; });
 
     const totalCap = list.reduce((s, x) => s + x.mcap, 0);
-    const tbody = document.querySelector("#table tbody");
-    tbody.innerHTML = list.map((x, i) => {
+    document.querySelector("#table tbody").innerHTML = list.map((x, i) => {
       const pr = prevRank[x.symbol];
       let arrow = "";
       if (pr == null) arrow = `<span class="tag-new">🆕</span>`;
