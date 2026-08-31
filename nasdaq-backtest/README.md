@@ -5,6 +5,11 @@
 - **策略 A：纳斯达克定投** —— 按月/周定投 QQQ（参数可调）
 - **策略 B：前 10 跟踪** —— 纳斯达克 100 前 10 成分股，季度再平衡（V2 动态历史成分名单）
 
+## 🌐 在线访问
+
+- 回测主页：<https://Aurorahrx.github.io/nasdaq-backtest/>
+- 成分追踪：<https://Aurorahrx.github.io/nasdaq-backtest/constituents.html>
+
 ## ✨ 特性
 
 - 🎬 **动画波浪图**：平滑曲线（Catmull-Rom）+ 流动光效（彗星拖尾），支持播放/暂停/倍速/拖动，曲线随时间生长，年份联动
